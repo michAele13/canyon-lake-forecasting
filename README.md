@@ -18,7 +18,7 @@ The STL decomposition highlights:
 - long-term storage decline periods
 - irregular drought-driven variation
 
-![STL Decomposition](figures/stl_decomp_full.png)
+![STL Decomposition](figures/stl_decomp_training.png)
 
 
 ## Forecast Comparison
