@@ -1,0 +1,15 @@
+Series: percent_full 
+Model: ETS(M,Ad,N) 
+  Smoothing parameters:
+    alpha = 0.9998999 
+    beta  = 0.4551355 
+    phi   = 0.8 
+
+  Initial states:
+     l[0]     b[0]
+ 68.87447 13.65154
+
+  sigma^2:  6e-04
+
+     AIC     AICc      BIC 
+961.4493 962.0624 979.2682 

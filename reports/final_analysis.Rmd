@@ -1,0 +1,382 @@
+---
+title: 'Forecasting Canyon Lake Storage: Why ARIMA Outperforms for Water Supply Planning'
+author: "Amanda Marrero"
+date: "March 22, 2026"
+output:
+  html_document:
+    theme: flatly
+    highlight: tango
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: true
+    toc_depth: 3
+    number_selections: true
+    df_print: paged
+    code_folding: show
+    fig_width: 9
+    fig_height: 5
+    fig_caption: true
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning   = FALSE,
+  message   = FALSE,
+  fig.align = "center",
+  dpi       = 150)
+```
+
+# Introduction
+
+Canyon Lake, located in Comal County, Texas, serves as a primary surface water 
+source for communities across the greater Central Texas region. The Guadalupe-
+Blanco River Authority (GBRA) administers the water for wholesale, and the 
+reservoir's conservation levels directly govern water availability for municipal 
+supply contracts throughout the Guadalupe River Basin. The city of Kyle 
+currently receives 54% of its total permitted water supply from Canyon Reservoir, 
+but contractually wholesale customers are subject to curtailments across six 
+drought response stages, each triggered by declining reservoir levels. Although 
+the reservoir has a capacity of 123 billion gallons, persistent drought 
+conditions have significantly reduced current storage levels, increasing the 
+risk of supply restrictions(City of Kyle, 2025). 
+The city of Kyle has experienced significant growth over the last 25 years, 
+increasing from 5,000 residents in 2000 to 50,000 in 2020, with projections 
+reaching 150,000 by 2080. Kyle remained under Stage 3 drought restrictions 
+through 2025, and as the city pursues continued economic expansion, accurate 
+long-term water supply forecasting has become an operational necessity (KXAN 
+Austin, 2025).
+Time series forecasting is a well-established quantitative tool for resource 
+planning, with applications ranging from energy demand to reservoir storage 
+management. Das et al. (2023) demonstrated that time series models applied to 
+Texas reservoirs provide water planners improved ability to make informed 
+decisions about water usage, minimizing impacts to local communities and 
+businesses. This project applies four forecasting methodologies — Exponential 
+Smoothing (ETS), ARIMA, Time Series Linear Regression (TSLM), and an Ensemble 
+average — to monthly Canyon Lake storage data spanning January 2010 through 
+December 2024, following the modeling framework described in Hyndman & 
+Athanasopoulos (2021). The goal is to identify the model best suited for 
+supporting water supply planning decisions in a rapidly urbanizing region under 
+recurring drought pressure.
+
+
+# Setup & Libraries
+
+```{r libraries}
+library(tidyverse)
+library(fpp3)
+library(patchwork)
+```
+
+```{r color palette}
+# Canyon Lake color palette — water/canyon theme
+model_colors <- c(
+  "ETS_Auto"   = "#2E86AB",   # steel blue
+  "ARIMA_Auto" = "#A23B3B",   # clay red  ← selected model gets warmest color
+  "TSLM"       = "#3D7A5C",   # canyon green
+  "Ensemble"   = "#7B6FA0"    # muted purple
+)
+
+model_labels <- c(
+  "ETS_Auto"   = "ETS (Automatic)",
+  "ARIMA_Auto" = "ARIMA (Automatic)",
+  "TSLM"       = "TSLM (Linear Regression)"
+)
+
+# Theme
+theme_canyon <- function(accent_color = "#2E86AB") {
+  theme_minimal() +
+    theme(
+      plot.title       = element_text(size = 11, face = "bold",
+                                      color = "#1a3a2a"),
+      plot.subtitle    = element_text(size = 9,  color = "#555555"),
+      plot.caption     = element_text(size = 8,  color = "gray50", hjust = 0),
+      plot.background  = element_rect(fill = "white", color = NA),
+      panel.background = element_rect(fill = "#F7FAFA", color = NA),
+      panel.grid.major = element_line(color = "#DDE8E8", linewidth = 0.4),
+      panel.grid.minor = element_blank(),
+      axis.title       = element_text(size = 9,  color = "#333333"),
+      axis.text        = element_text(size = 8,  color = "#555555"),
+      strip.text       = element_text(face = "bold", color = "white"),
+      strip.background = element_rect(fill = accent_color),
+      legend.position  = "bottom",
+      legend.text      = element_text(size = 8),
+      legend.title     = element_text(size = 8)
+    )
+}
+
+theme_set(theme_canyon())
+```
+
+# Data Collection & Preparation
+
+```{r load data}
+# Read raw lines to identify header rows
+raw_lines <- readLines("https://www.waterdatafortexas.org/reservoirs/individual/canyon.csv")
+```
+
+```{r wrangle data}
+canyon_raw <- read.csv(
+  "https://www.waterdatafortexas.org/reservoirs/individual/canyon.csv",
+  skip         = 54,
+  header       = TRUE,
+  comment.char = ""
+)
+
+# Aggregate to monthly
+canyon_monthly <- canyon_raw %>%
+  mutate(date  = as.Date(date),
+         month = yearmonth(date)) %>%
+  group_by(month) %>%
+  summarise(
+    percent_full         = mean(percent_full,         na.rm = TRUE),
+    conservation_storage = mean(conservation_storage, na.rm = TRUE)
+  ) %>%
+  as_tsibble(index = month)
+
+# Filter to study window: Jan 2010 – Dec 2024
+canyon_monthly <- canyon_monthly %>%
+  filter(month >= yearmonth("2010 Jan") &
+         month <= yearmonth("2024 Dec"))
+
+# Validation checks
+nrow(canyon_monthly)       # should be 180
+range(canyon_monthly$month)
+canyon_monthly %>% scan_gaps()
+```
+
+## Full Series Time Plot
+
+```{r full series plot}
+canyon_monthly %>%
+  autoplot(percent_full, linewidth = 1.1) +
+  geom_vline(xintercept = yearmonth("2022 Jan"),
+             linetype = "dashed", color = "#7B6FA0", linewidth = 0.8) +
+  annotate("text", x = yearmonth("2018 Jun"), y = 85,
+           label = "Training", color = "#3D7A5C", size = 3) +
+  annotate("text", x = yearmonth("2023 Jun"), y = 85,
+           label = "Test", color = "#A23B3B", size = 3) +
+  labs(
+    title    = "Canyon Lake: Percent Full (2010–2024)",
+    subtitle = "Dashed line indicates train/test split | Training: Jan 2010–Dec 
+    2021 | Test: Jan 2022–Dec 2024",
+    y = "Percent Full (%)",
+    x = NULL
+  )
+```
+
+# Train / Test Split
+
+```{r train-test split}
+train_data <- canyon_monthly %>%
+  filter(month <= yearmonth("2021 Dec"))   # 144 months (80%)
+
+test_data <- canyon_monthly %>%
+  filter(month >  yearmonth("2021 Dec"))   # 36 months  (20%)
+
+cat("Training observations:", nrow(train_data), "\n")
+cat("Test observations:    ", nrow(test_data),  "\n")
+```
+
+# Exploratory Analysis (Training Data Only)
+
+### ACF / PACF
+
+```{r acf-pacf}
+train_data %>%
+  gg_tsdisplay(percent_full, plot_type = "partial") +
+  labs(title = "Canyon Lake: Percent Full (2010–2021)"
+       )
+```
+
+### STL Decomposition
+
+```{r stl-decomp}
+train_data %>%
+  model(STL(percent_full ~ trend(window = 13) +
+              season(window = "periodic"))) %>%
+  components() %>%
+  autoplot() +
+  labs(
+    title    = "STL Decomposition — Canyon Lake Percent Full",
+    subtitle = "Training data: Jan 2010 – Dec 2021",
+    caption  = "Source: Texas Water Data (waterdatafortexas.org)"
+  )
+```
+
+### Transformation & Stationarity Checks
+
+```{r stationarity}
+# Box-Cox lambda (assessed but not applied due to bounded variable)
+lambda <- train_data %>%
+  features(percent_full, features = guerrero) %>%
+  pull(lambda_guerrero)
+cat("Guerrero lambda:", round(lambda, 3), "\n")
+
+# Seasonal differencing
+train_data %>% features(percent_full, unitroot_nsdiffs)
+
+# Non-seasonal differencing after seasonal diff
+train_data %>% features(difference(percent_full, 12), unitroot_ndiffs)
+```
+
+# Model Fitting
+
+```{r fit-models}
+models <- train_data %>%
+  model(
+    ETS_Auto   = ETS(percent_full),
+    ARIMA_Auto = ARIMA(percent_full),
+    TSLM       = TSLM(percent_full ~ trend() + season()),
+    Ensemble   = (ETS(percent_full) + ARIMA(percent_full) +
+                    TSLM(percent_full ~ trend() + season())) / 3
+  )
+```
+
+### Model Summaries
+
+```{r model-reports}
+report(models$ETS_Auto[[1]])
+report(models$ARIMA_Auto[[1]])
+report(models$TSLM[[1]])
+```
+
+# Residual Diagnostics
+
+```{r arima-residuals, fig.height=4.5, fig.width=9, out.width='100%'}
+# ARIMA residuals — styled (poster chart)
+resid_plot <- models %>%
+  select(ARIMA_Auto) %>%
+  gg_tsresiduals(lag = 24) %>%
+  invisible()
+
+p1 <- resid_plot[[1]] + theme_canyon(accent_color = "#A23B3B") + labs(title = NULL)
+p2 <- resid_plot[[2]] + theme_canyon(accent_color = "#A23B3B") + labs(title = NULL)
+p3 <- resid_plot[[3]] + theme_canyon(accent_color = "#A23B3B") + labs(title = NULL)
+
+(p1 / (p2 | p3)) +
+  plot_layout(heights = c(1.5, 1)) +
+  plot_annotation(
+    title    = "Residual Diagnostics \u2014 ARIMA (Automatic)",
+    subtitle = "Innovations over time, ACF, and histogram",
+    theme = theme(
+      plot.title      = element_text(size = 13, face = "bold", color = "#A23B3B"),
+      plot.subtitle   = element_text(size = 9,  color = "#666666"),
+      plot.background = element_rect(fill = "white", color = "#A23B3B", linewidth = 2)
+    )
+  )
+```
+```{r ets-residuals, fig.height=3.5, fig.width=9, out.width='100%'}
+models %>%
+  select(ETS_Auto) %>%
+  gg_tsresiduals(lag = 24) +
+  labs(title = "Residual Diagnostics — ETS (Automatic)")
+```
+```{r tslm-residuals, fig.height=3.5, fig.width=9, out.width='100%'}
+models %>%
+  select(TSLM) %>%
+  gg_tsresiduals(lag = 24) +
+  labs(title = "Residual Diagnostics — TSLM (Linear Regression)")
+```
+
+### Ljung-Box Test
+
+```{r ljung-box}
+models_list <- c("ETS_Auto", "ARIMA_Auto", "TSLM")
+
+ljung_results <- augment(models) %>%
+  filter(.model %in% models_list) %>%
+  group_by(.model) %>%
+  features(.innov, ljung_box, lag = 24, dof = 0)
+
+ljung_results %>%
+  rename(Model = .model,
+         `LB Statistic` = lb_stat,
+         `p-value` = lb_pvalue) %>%
+  mutate(
+    `LB Statistic` = round(`LB Statistic`, digits = 2),
+    `p-value` = round(`p-value`, digits = 3),
+    `Residuals Clean?` = ifelse(`p-value` > 0.05, "Yes", "No"))
+```
+
+> **Interpretation:** A p-value above 0.05 indicates residuals are consistent with white noise.
+> ARIMA passes (p = 0.688); ETS and TSLM show significant residual autocorrelation.
+
+# Forecasting
+
+```{r forecast}
+fc <- forecast(models, h = 36)
+```
+
+## Forecast Plot
+
+```{r forecast-plot}
+fc %>%
+  autoplot(canyon_monthly, level = 95, alpha = 0.8) +
+  scale_color_manual(values = model_colors) +
+  scale_fill_manual(values  = model_colors) +
+  labs(
+    title    = "Canyon Lake Storage Forecasts: Four-Model Comparison",
+    subtitle = "Forecast period: Jan 2022 – Dec 2024 | 95% prediction intervals",
+    caption  = "Source: Texas Water Data (waterdatafortexas.org)",
+    y = "Percent Full (%)", x = NULL, color = "Model", fill = "Model"
+  )
+```
+
+# Forecast Accuracy
+
+```{r accuracy}
+accuracy_table <- fc %>%
+  accuracy(test_data) %>%
+  select(.model, RMSE, MAE, MAPE) %>%
+  arrange(RMSE)
+
+accuracy_table %>%
+  rename(Model = .model) %>%
+  mutate(across(c(RMSE, MAE), ~ round(.x, 2)),
+         MAPE = paste0(round(MAPE, 1), "%"))
+```
+
+# Model Selection & Justification
+
+Although TSLM produced the lowest RMSE (28.5), its Ljung-Box p-value of approximately 0
+indicates very autocorrelated residuals. This invalidates its prediction intervals, making it
+unreliable for contractual planning purposes where uncertainty bounds matter as much as point
+forecasts.
+
+**The ARIMA model is selected as the best model** based on the combination of:
+
+- Competitive forecast accuracy (RMSE = 30.4, MAE = 26.4, MAPE = 42.0%)
+- Clean residuals confirmed by Ljung-Box test (p = 0.688)
+- Statistically valid 95% prediction intervals suitable for drought-stage planning
+
+For a water utility negotiating multi-year supply agreements under GBRA's tiered drought
+contingency framework, the lower bound of the forecast range is operationally critical.
+ARIMA is the only model that produces trustworthy uncertainty estimates.
+
+# References
+
+City of Kyle. (2022). *About Kyle water.* City of Kyle Water Utilities.
+https://www.cityofkyle.gov/city-services/water-utilities/about-kyle-water/
+
+Guadalupe-Blanco River Authority. (2024). *Drought contingency plan for wholesale customers.*
+https://www.gbra.org/wp-content/uploads/2024/05/2024-Wholesale-Drought-Contingency-Plan_FINAL-w-Resolution.pdf
+
+Hyndman, R. J., & Athanasopoulos, G. (2021). *Forecasting: Principles and practice* (3rd ed.).
+OTexts. https://otexts.com/fpp3/
+
+Rohli, E., Woolsey, N., & Sathiaraj, D. (2023). Near-term forecasting of water reservoir storage
+capacities using long short-term memory. *Environmental Data Science, 2*, e30.
+https://doi.org/10.1017/eds.2023.25
+
+Stark, S. (2025, May 14). City of Kyle diversifying water sources amid pervasive drought
+conditions. *KXAN Austin.*
+https://www.kxan.com/news/local/hays/kyle/city-of-kyle-diversifying-water-sources-amid-pervasive-drought-conditions/
+
+Water Data for Texas. (2024). *Canyon Lake reservoir storage data.*
+https://www.waterdatafortexas.org/reservoirs/individual/canyon
+

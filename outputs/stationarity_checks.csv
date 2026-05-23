@@ -1,0 +1,3 @@
+nsdiffs,check,ndiffs
+0,seasonal_differencing,NA
+NA,nonseasonal_differencing_after_seasonal,0

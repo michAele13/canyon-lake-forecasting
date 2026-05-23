@@ -1,0 +1,28 @@
+Series: percent_full 
+Model: TSLM 
+
+Residuals:
+     Min       1Q   Median       3Q      Max 
+-14.4549  -5.9983  -0.2996   6.5164  12.7362 
+
+Coefficients:
+               Estimate Std. Error t value Pr(>|t|)    
+(Intercept)    85.67585    2.44817  34.996  < 2e-16 ***
+trend()         0.05869    0.01546   3.797 0.000223 ***
+season()year2   1.15194    3.13717   0.367 0.714070    
+season()year3   1.42267    3.13728   0.453 0.650960    
+season()year4   1.49392    3.13747   0.476 0.634758    
+season()year5   2.37826    3.13774   0.758 0.449841    
+season()year6   4.00375    3.13808   1.276 0.204263    
+season()year7   3.15510    3.13850   1.005 0.316612    
+season()year8   1.74855    3.13900   0.557 0.578450    
+season()year9   0.56015    3.13957   0.178 0.858671    
+season()year10  0.75590    3.14022   0.241 0.810153    
+season()year11  1.53278    3.14094   0.488 0.626364    
+season()year12  1.02345    3.14174   0.326 0.745125    
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+Residual standard error: 7.684 on 131 degrees of freedom
+Multiple R-squared: 0.1169,	Adjusted R-squared: 0.03602
+F-statistic: 1.445 on 12 and 131 DF, p-value: 0.1535

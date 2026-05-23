@@ -1,0 +1,10 @@
+Series: percent_full 
+Model: ARIMA(0,1,1) 
+
+Coefficients:
+         ma1
+      0.5883
+s.e.  0.0824
+
+sigma^2 estimated as 4.751:  log likelihood=-314.04
+AIC=632.09   AICc=632.17   BIC=638.01

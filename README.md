@@ -63,7 +63,7 @@ Monthly percent-full observations for Canyon Lake were obtained from the Texas W
 ## Repository Structure
 
 ```text
-Canyon Lake Forecasting/
+canyon-lake-forecasting/
 │
 ├── data/
 |    └── prcoessed/
