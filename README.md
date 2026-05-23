@@ -1,6 +1,6 @@
 # Forecasting Canyon Lake Reservoir Storage
 
-**Authors:** Amanda Marrero
+**Authors:** Amanda Marrero                                           
 **Institution:** Woods College of Advancing Studies, Boston College  
 **Course:** Applied Analytics — Master's Program  
 **Data Source:** Water Data for Texas (https://www.waterdatafortexas.org/reservoirs/individual/canyon.csv)
